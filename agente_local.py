@@ -9,6 +9,7 @@ from io import BytesIO
 from PIL import Image
 from telegram import Bot
 from telegram.constants import ParseMode
+import re
 
 # 📁 Cargar credenciales desde .env
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / "credenciales_telegram.env")
@@ -39,10 +40,24 @@ def modelo_llm(prompt: str) -> str:
         print(f"❌ Error procesando la respuesta del modelo: {e}")
         raise
 
+
+def extraer_keywords(texto: str) -> str:
+    # Extraer nombres propios (palabras con mayúscula no al inicio de frase)
+    nombres = re.findall(r'(?<!\.\s)(?<!^)(?<!\n)(?<!\")\b[A-Z][a-zA-Z]{2,}\b', texto)
+
+    # Extraer palabras clave: inteligencia, datos, IA, etc.
+    palabras_clave = re.findall(r'\b(inteligencia|artificial|datos|transformación|empresa|optimiza|IA|modelo|código|sistema|automatiza|ciudad|tecnología|neón|cyberpunk|robot|futurista)\b', texto, flags=re.IGNORECASE)
+
+    # Quitar duplicados y limitar a 5
+    todas = list(dict.fromkeys(nombres + palabras_clave))[:5]
+
+    # Convertir a una frase separada por comas para usar en el prompt
+    return ', '.join(todas)
+
 # 🎨 Generar imagen estilo GTA V sin letras visibles
-async def generar_imagen_gtav(texto: str) -> BytesIO:
-    # Solo pasamos un prompt abstracto
-    prompt_visual = "futuristic city, neon lights, GTA V style character, cinematic lighting"
+async def generar_imagen_gtav(texto_resumen: str) -> BytesIO:
+    palabras = extraer_keywords(texto_resumen)
+    prompt_visual = f"GTA V style, cinematic, futuristic, {palabras}"
     url = f"https://image.pollinations.ai/prompt/{requests.utils.quote(prompt_visual)}"
     response = requests.get(url)
     img = Image.open(BytesIO(response.content))
@@ -50,6 +65,7 @@ async def generar_imagen_gtav(texto: str) -> BytesIO:
     img.save(img_byte_arr, format='PNG')
     img_byte_arr.seek(0)
     return img_byte_arr
+
 
 # 📰 Formatear la noticia
 def formatear_noticia(noticia_completa: str, fecha_publicacion: datetime) -> str:
@@ -95,7 +111,7 @@ if __name__ == "__main__":
     print("\n🧠 Resumen generado:\n", mensaje)
 
     async def main():
-        imagen = await generar_imagen_gtav(contenido)
+        imagen = await generar_imagen_gtav(mensaje)
         await bot.send_photo(chat_id=TELEGRAM_CHAT_ID, photo=imagen, caption=mensaje, parse_mode=ParseMode.MARKDOWN)
 
     asyncio.run(main())
