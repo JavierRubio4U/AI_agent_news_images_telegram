@@ -1,93 +1,87 @@
-import requests
-import json
-import feedparser
 import os
+from datetime import datetime
+from pathlib import Path
+import requests
+import feedparser
+from bs4 import BeautifulSoup
+from telegram import Bot
 from dotenv import load_dotenv
-from publicar_telegram import publicar_en_telegram
 
-# LM Studio endpoint
-url = "http://localhost:1234/v1/chat/completions"
-headers = {"Content-Type": "application/json"}
-mensajes = []
+# 📁 Cargar credenciales
+load_dotenv(dotenv_path=Path(__file__).resolve().parent / "credenciales_telegram.env")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+bot = Bot(token=TELEGRAM_TOKEN)
 
-print("🧠 Agente activo con streaming, logging y publicación. Escribe 'salir' para terminar.\n")
-
-lista = []  # cache de noticias
-
+# 🔍 Noticias IA desde VentureBeat (RSS)
 def obtener_noticias_ia():
     feed_url = "https://feeds.feedburner.com/venturebeat/SZYF"
     feed = feedparser.parse(feed_url)
     noticias = []
-    for i, entrada in enumerate(feed.entries[:5], start=1):
-        titulo = entrada.title
-        enlace = entrada.link
-        noticias.append(f"{i}. {titulo} ({enlace})")
+    for entrada in feed.entries[:3]:  # Solo las 3 primeras
+        noticias.append({
+            "titulo": entrada.title,
+            "link": entrada.link
+        })
     return noticias
 
-while True:
-    user_input = input("Tú: ")
-    if user_input.lower() in ['salir', 'exit', 'q']:
-        break
+# 📥 Extraer texto de una noticia
+def extraer_contenido_noticia(url: str) -> str:
+    resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
+    soup = BeautifulSoup(resp.content, "html.parser")
+    parrafos = soup.select("p")
+    texto = "\n".join(p.get_text(strip=True) for p in parrafos if len(p.get_text(strip=True)) > 50)
+    return texto[:3000]  # Máximo 3000 caracteres
 
-    if user_input.lower() == "noticias":
-        lista = obtener_noticias_ia()
-        print("📰 Noticias disponibles:")
-        for item in lista:
-            print(item)
-        print("\nEscribe: un número (1–5) para procesar una.\n")
-        continue
+# 🧠 Llamada al modelo LLM local
+def modelo_llm(prompt: str) -> str:
+    url = "http://localhost:11434/v1/completions"
+    response = requests.post(url, json={
+        "model": "mistralai/mistral-7b-instruct-v0.3",
+        "prompt": prompt,
+        "max_tokens": 500,
+        "temperature": 0.7
+    })
+    data = response.json()
+    if "choices" not in data or len(data["choices"]) == 0:
+        raise ValueError("❌ Error: respuesta inesperada del modelo")
+    return data["choices"][0]["text"].strip()
 
-    if user_input.isdigit() and 1 <= int(user_input) <= len(lista):
-        indice = int(user_input) - 1
-        seleccionada = lista[indice]
-        user_input = f"Resume esta noticia y coméntala en español:\n{seleccionada}"
-        print(f"📰 Procesando noticia {indice + 1}...\n")
+# 📄 Formatear resumen LLM
+def formatear_noticia(noticia_completa: str, fecha_publicacion: datetime) -> str:
+    prompt = f"""
+Analiza la siguiente noticia y responde separando claramente tres secciones:
 
-    elif user_input.lower() == "publica":
-        if mensajes:
-            publicar_en_telegram(mensajes[-1]['content'])
-        else:
-            print("❌ No hay mensaje previo para publicar.")
-        continue
+1. TÍTULO: Un titular corto (máx 15 palabras) que resuma lo más importante.
+2. RESUMEN: Qué ha pasado, explicado brevemente (máx 5 líneas).
+3. COMENTARIO: Breve análisis del impacto, posibles consecuencias o contexto adicional (máx 8 líneas).
 
-    mensajes.append({"role": "user", "content": user_input})
-    data = {
-        "model": "local-model",
-        "messages": mensajes,
-        "temperature": 0.7,
-        "stream": True
-    }
+Noticia original:
+\"\"\"{noticia_completa}\"\"\"
+"""
+    resumen = modelo_llm(prompt)
+    fecha_str = fecha_publicacion.strftime("%d/%m/%Y %H:%M")
+    return f"{resumen}\n\n🗓 *Publicado:* {fecha_str}"
 
-    print("🤖 ", end='', flush=True)
-    respuesta = requests.post(url, headers=headers, json=data, stream=True)
+import asyncio
 
-    content = ""
-    for linea in respuesta.iter_lines():
-        if linea:
-            linea_str = linea.decode("utf-8")
-            if linea_str.startswith("data: "):
-                linea_str = linea_str[6:]
-            if linea_str.strip() == "[DONE]":
-                break
-            try:
-                dato = json.loads(linea_str)
-                delta = dato['choices'][0]['delta']
-                texto = delta.get('content', '')
-                print(texto, end='', flush=True)
-                content += texto
-            except Exception as e:
-                print(f"\n❌ Error procesando línea: {e}")
+# 📤 Enviar a Telegram (modo async)
+async def enviar_noticia_a_telegram(texto_resumen: str):
+    await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=texto_resumen, parse_mode="Markdown")
 
-    print("\n")
-    mensajes.append({"role": "assistant", "content": content})
+# 🚀 Main interactivo
+async def main():
+    noticias = obtener_noticias_ia()
+    print("\n🧠 Noticias IA destacadas:\n")
+    for i, noticia in enumerate(noticias, start=1):
+        print(f"{i}. {noticia['titulo']}")
 
-    # Guardar log
-    with open("log_conversacion.txt", "a", encoding="utf-8") as f:
-        f.write(f"Tú: {user_input}\n")
-        f.write(f"🤖 {content}\n")
-        f.write("-" * 40 + "\n")
+    seleccion = int(input("\nElige una noticia (1-3): ")) - 1
+    noticia = noticias[seleccion]
+    print(f"\n🔗 Procesando: {noticia['link']}")
+    texto = extraer_contenido_noticia(noticia["link"])
+    resumen = formatear_noticia(texto, datetime.now())
+    await enviar_noticia_a_telegram(resumen)
 
-    if "Resume esta noticia" in user_input:
-        publicar_en_telegram(content)
-
-
+if __name__ == "__main__":
+    asyncio.run(main())
