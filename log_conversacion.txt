@@ -25,3 +25,15 @@ En español:
 * C8 Health empezó con una AI que proporciona orientación a los anestesiólogos en demanda, ahora se enfoca en hospitales completos. (C8 Health comenzó con una AI que provee orientación a los anestesiólogos en demanda, ahora está centrado en hospitales completos.)
 * Google DeepMind afirma que su nueva AI puede mapear el planeta entero con una precisión sin precedentes. (Google DeepMind afirma que su nueva AI puede mapear el planeta entero con una precisión sin precedentes.)
 ----------------------------------------
+Tú: Resume esta noticia y coméntala en español:
+4. Shadow AI adds $670K to breach costs while 97% of enterprises skip basic access controls, IBM reports (https://venturebeat.com/security/ibm-shadow-ai-breaches-cost-670k-more-97-of-firms-lack-controls/)
+🤖  Esta noticia trata sobre los costos asociados a las infracciones de seguridad en empresas y cómo la falta de controles básicos puede aumentar estos costos. De acuerdo con un informe de IBM, aproximadamente el 97% de las empresas ignoran los controles básicos de acceso, lo que lleva a una mayor vulnerabilidad y costes en casos de infracciones. En particular, se menciona un caso en el que la falta de medidas de seguridad en Shadow AI provocó gastos adicionales de $670.000 en los costos de respuesta al brecha. Este informe es una llamada a la atención para las empresas y su necesidad de implementar controles de acceso básicos como parte de sus medidas de seguridad.
+----------------------------------------
+Tú: Resume esta noticia y coméntala en español:
+4. Shadow AI adds $670K to breach costs while 97% of enterprises skip basic access controls, IBM reports (https://venturebeat.com/security/ibm-shadow-ai-breaches-cost-670k-more-97-of-firms-lack-controls/)
+🤖  Este artículo informa sobre un estudio realizado por IBM que revela que las compañías están enfrentando costos adicionales en el orden de $670.000 debido a la falta de controles básicos de acceso en Inteligencia Artificial (AI) "en sombra", lo que lleva a incidentes de seguridad. Según los datos, el 97% de las empresas no implementan estos controles básicos, lo que aumenta la vulnerabilidad y la posibilidad de que ocurran ataques cibernéticos.
+
+Este hallazgo es preocupante ya que la AI en sombra se refiere a los modelos de aprendizaje automático que funcionan fuera del control de las organizaciones, y por lo tanto son más difíciles de supervisar y proteger. Esto significa que cualquier error o falla en estos modelos puede tener consecuencias serias para la seguridad de los datos y la privacidad de las empresas.
+
+Es importante que las compañías tomen medidas para implementar controles básicos de acceso y supervisión a sus modelos de aprendizaje automático, para reducir el riesgo de incidentes de seguridad y proteger sus datos y intereses.
+----------------------------------------

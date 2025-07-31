@@ -15,6 +15,7 @@ __pycache__/
 *.pyo
 *.pyd
 *.sqlite3
+test.py
 
 # Mac / Windows
 .DS_Store
