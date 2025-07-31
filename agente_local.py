@@ -1,39 +1,24 @@
 import os
+import asyncio
 from datetime import datetime
+from dotenv import load_dotenv
 from pathlib import Path
 import requests
 import feedparser
-from bs4 import BeautifulSoup
+from io import BytesIO
+from PIL import Image
 from telegram import Bot
-from dotenv import load_dotenv
+from telegram.constants import ParseMode
 
-# 📁 Cargar credenciales
+# 📁 Cargar credenciales desde .env
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / "credenciales_telegram.env")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+# 📤 Bot de Telegram
 bot = Bot(token=TELEGRAM_TOKEN)
 
-# 🔍 Noticias IA desde VentureBeat (RSS)
-def obtener_noticias_ia():
-    feed_url = "https://feeds.feedburner.com/venturebeat/SZYF"
-    feed = feedparser.parse(feed_url)
-    noticias = []
-    for entrada in feed.entries[:3]:  # Solo las 3 primeras
-        noticias.append({
-            "titulo": entrada.title,
-            "link": entrada.link
-        })
-    return noticias
-
-# 📥 Extraer texto de una noticia
-def extraer_contenido_noticia(url: str) -> str:
-    resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
-    soup = BeautifulSoup(resp.content, "html.parser")
-    parrafos = soup.select("p")
-    texto = "\n".join(p.get_text(strip=True) for p in parrafos if len(p.get_text(strip=True)) > 50)
-    return texto[:3000]  # Máximo 3000 caracteres
-
-# 🧠 Llamada al modelo LLM local
+# 🧠 Función que llama a tu modelo LLM local
 def modelo_llm(prompt: str) -> str:
     url = "http://localhost:11434/v1/completions"
     response = requests.post(url, json={
@@ -42,12 +27,31 @@ def modelo_llm(prompt: str) -> str:
         "max_tokens": 500,
         "temperature": 0.7
     })
-    data = response.json()
-    if "choices" not in data or len(data["choices"]) == 0:
-        raise ValueError("❌ Error: respuesta inesperada del modelo")
-    return data["choices"][0]["text"].strip()
 
-# 📄 Formatear resumen LLM
+    try:
+        respuesta_json = response.json()
+        if "choices" not in respuesta_json or len(respuesta_json["choices"]) == 0:
+            print("❌ La respuesta del modelo no contiene el contenido esperado:")
+            print(respuesta_json)
+            raise KeyError("Falta 'choices[0].text' en la respuesta del modelo")
+        return respuesta_json["choices"][0]["text"]
+    except Exception as e:
+        print(f"❌ Error procesando la respuesta del modelo: {e}")
+        raise
+
+# 🎨 Generar imagen estilo GTA V sin letras visibles
+async def generar_imagen_gtav(texto: str) -> BytesIO:
+    # Solo pasamos un prompt abstracto
+    prompt_visual = "futuristic city, neon lights, GTA V style character, cinematic lighting"
+    url = f"https://image.pollinations.ai/prompt/{requests.utils.quote(prompt_visual)}"
+    response = requests.get(url)
+    img = Image.open(BytesIO(response.content))
+    img_byte_arr = BytesIO()
+    img.save(img_byte_arr, format='PNG')
+    img_byte_arr.seek(0)
+    return img_byte_arr
+
+# 📰 Formatear la noticia
 def formatear_noticia(noticia_completa: str, fecha_publicacion: datetime) -> str:
     prompt = f"""
 Analiza la siguiente noticia y responde separando claramente tres secciones:
@@ -59,29 +63,40 @@ Analiza la siguiente noticia y responde separando claramente tres secciones:
 Noticia original:
 \"\"\"{noticia_completa}\"\"\"
 """
-    resumen = modelo_llm(prompt)
+
+    respuesta = modelo_llm(prompt).strip()
     fecha_str = fecha_publicacion.strftime("%d/%m/%Y %H:%M")
-    return f"{resumen}\n\n🗓 *Publicado:* {fecha_str}"
+    mensaje = f"{respuesta}\n\n🗓 *Publicado:* {fecha_str}"
+    return mensaje
 
-import asyncio
+# 🔎 Obtener noticias desde RSS de VentureBeat
+def obtener_noticias_rss(feed_url="https://venturebeat.com/feed/"):
+    feed = feedparser.parse(feed_url)
+    noticias = []
+    for entrada in feed.entries[:3]:
+        titulo = entrada.title
+        enlace = entrada.link
+        publicado = datetime(*entrada.published_parsed[:6])
+        contenido = entrada.summary
+        noticias.append((titulo, contenido, publicado, enlace))
+    return noticias
 
-# 📤 Enviar a Telegram (modo async)
-async def enviar_noticia_a_telegram(texto_resumen: str):
-    await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=texto_resumen, parse_mode="Markdown")
-
-# 🚀 Main interactivo
-async def main():
-    noticias = obtener_noticias_ia()
-    print("\n🧠 Noticias IA destacadas:\n")
-    for i, noticia in enumerate(noticias, start=1):
-        print(f"{i}. {noticia['titulo']}")
-
-    seleccion = int(input("\nElige una noticia (1-3): ")) - 1
-    noticia = noticias[seleccion]
-    print(f"\n🔗 Procesando: {noticia['link']}")
-    texto = extraer_contenido_noticia(noticia["link"])
-    resumen = formatear_noticia(texto, datetime.now())
-    await enviar_noticia_a_telegram(resumen)
-
+# 🧪 Ejecutar el flujo completo
 if __name__ == "__main__":
+    noticias = obtener_noticias_rss()
+    print("🧠 Noticias IA destacadas:\n")
+    for i, (titulo, _, fecha, _) in enumerate(noticias, 1):
+        print(f"{i}. {titulo} ({fecha.strftime('%d/%m/%Y')})")
+
+    seleccion = int(input("\nElige una noticia (1-3): "))
+    _, contenido, fecha, enlace = noticias[seleccion - 1]
+
+    mensaje = formatear_noticia(contenido, fecha)
+    print("\n🧠 Resumen generado:\n", mensaje)
+
+    async def main():
+        imagen = await generar_imagen_gtav(contenido)
+        await bot.send_photo(chat_id=TELEGRAM_CHAT_ID, photo=imagen, caption=mensaje, parse_mode=ParseMode.MARKDOWN)
+
     asyncio.run(main())
+
