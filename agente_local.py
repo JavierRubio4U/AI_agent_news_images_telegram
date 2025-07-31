@@ -1,34 +1,54 @@
 import requests
 import json
 import feedparser
+import os
+from dotenv import load_dotenv
+from publicar_telegram import publicar_en_telegram
 
-def obtener_noticias_ia():
-    feed_url = "https://feeds.feedburner.com/venturebeat/SZYF"  # VentureBeat AI
-    feed = feedparser.parse(feed_url)
-    noticias = []
-    for entrada in feed.entries[:3]:  # Solo 3 titulares
-        titulo = entrada.title
-        enlace = entrada.link
-        noticias.append(f"{titulo} ({enlace})")
-    return "\n".join(noticias)
-
+# LM Studio endpoint
 url = "http://localhost:1234/v1/chat/completions"
 headers = {"Content-Type": "application/json"}
-
 mensajes = []
 
-print("🧠 Agente local activo con streaming. Escribe 'salir' para terminar.\n")
+print("🧠 Agente activo con streaming, logging y publicación. Escribe 'salir' para terminar.\n")
+
+lista = []  # cache de noticias
+
+def obtener_noticias_ia():
+    feed_url = "https://feeds.feedburner.com/venturebeat/SZYF"
+    feed = feedparser.parse(feed_url)
+    noticias = []
+    for i, entrada in enumerate(feed.entries[:5], start=1):
+        titulo = entrada.title
+        enlace = entrada.link
+        noticias.append(f"{i}. {titulo} ({enlace})")
+    return noticias
 
 while True:
     user_input = input("Tú: ")
     if user_input.lower() in ['salir', 'exit', 'q']:
         break
-    
-    # 📌 Si escribe "noticias", se cargan y se reescribe el prompt
+
     if user_input.lower() == "noticias":
-        resumen = obtener_noticias_ia()
-        user_input = f"Resume estas noticias y coméntalas en español:\n{resumen}"
-        print("📰 Noticias obtenidas y enviadas al modelo...\n")
+        lista = obtener_noticias_ia()
+        print("📰 Noticias disponibles:")
+        for item in lista:
+            print(item)
+        print("\nEscribe: un número (1–5) para procesar una.\n")
+        continue
+
+    if user_input.isdigit() and 1 <= int(user_input) <= len(lista):
+        indice = int(user_input) - 1
+        seleccionada = lista[indice]
+        user_input = f"Resume esta noticia y coméntala en español:\n{seleccionada}"
+        print(f"📰 Procesando noticia {indice + 1}...\n")
+
+    elif user_input.lower() == "publica":
+        if mensajes:
+            publicar_en_telegram(mensajes[-1]['content'])
+        else:
+            print("❌ No hay mensaje previo para publicar.")
+        continue
 
     mensajes.append({"role": "user", "content": user_input})
     data = {
@@ -39,13 +59,11 @@ while True:
     }
 
     print("🤖 ", end='', flush=True)
-
     respuesta = requests.post(url, headers=headers, json=data, stream=True)
 
     content = ""
     for linea in respuesta.iter_lines():
         if linea:
-            # Quitar prefijo "data: " si lo tiene
             linea_str = linea.decode("utf-8")
             if linea_str.startswith("data: "):
                 linea_str = linea_str[6:]
@@ -63,10 +81,13 @@ while True:
     print("\n")
     mensajes.append({"role": "assistant", "content": content})
 
-
-    # Guardar conversación en un archivo de log
+    # Guardar log
     with open("log_conversacion.txt", "a", encoding="utf-8") as f:
         f.write(f"Tú: {user_input}\n")
         f.write(f"🤖 {content}\n")
         f.write("-" * 40 + "\n")
+
+    if "Resume esta noticia" in user_input:
+        publicar_en_telegram(content)
+
 
