@@ -57,7 +57,7 @@ def extraer_keywords(texto: str) -> str:
 # 🎨 Generar imagen estilo GTA V sin letras visibles
 async def generar_imagen_gtav(texto_resumen: str) -> BytesIO:
     palabras = extraer_keywords(texto_resumen)
-    prompt_visual = f"GTA V style, cinematic, futuristic, {palabras}"
+    prompt_visual = f"GTA V style, cinematic, {palabras}"
     url = f"https://image.pollinations.ai/prompt/{requests.utils.quote(prompt_visual)}"
     response = requests.get(url)
     img = Image.open(BytesIO(response.content))
