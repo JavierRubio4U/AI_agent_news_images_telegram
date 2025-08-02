@@ -1,214 +1,351 @@
+# -*- coding: utf-8 -*-
+
 import os
 import re
+import sys
+import json
 import time
 import torch
 import asyncio
 import requests
-import feedparser
-from io import BytesIO
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from PIL import Image
+from PIL import Image, ImageDraw
 from telegram import Bot
-from telegram.constants import ParseMode
-from diffusers import StableDiffusionPipeline
+from diffusers import StableDiffusionXLPipeline
+from typing import List, Tuple
+from io import BytesIO
 
 # 📁 Cargar credenciales
+# Nota: La API Key y el CX ID ya han sido añadidos a tu archivo .env
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / "credenciales_telegram.env")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+# Para la API de Google Custom Search
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+GOOGLE_CX_ID = os.getenv("GOOGLE_CX_ID")
+
+if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+    raise ValueError("El TOKEN de Telegram o el CHAT_ID no están configurados en el archivo .env")
+
+# Inicialización del bot de Telegram
 bot = Bot(token=TELEGRAM_TOKEN)
 
-# 🧠 Consulta a tu LLM local
-def modelo_llm(prompt: str) -> str:
-    url = "http://localhost:11434/v1/completions"
-    response = requests.post(url, json={
-        "model": "mistralai/mistral-7b-instruct-v0.3",
-        "prompt": prompt,
+# 🧠 Consulta a tu LLM local (Ollama o LM Studio)
+def modelo_llm(prompt: str, model_name: str = "mistralai/mistral-7b-instruct-v0.3") -> str:
+    """
+    Consulta a un modelo de lenguaje local a través de la API de Ollama/LM Studio.
+    """
+    url = "http://localhost:11434/v1/chat/completions"
+    
+    payload = {
+        "model": model_name,
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
         "max_tokens": 500,
-        "temperature": 0.7
-    })
-    return response.json()["choices"][0]["text"].strip()
+        "temperature": 0.7,
+        "stream": False
+    }
+    
+    try:
+        response = requests.post(url, json=payload)
+        response.raise_for_status()
+        return response.json()["choices"][0]["message"]["content"].strip()
+    except requests.exceptions.RequestException as e:
+        print(f"Error al conectar con el LLM local: {e}")
+        return ""
 
-# 🔎 Extraer 5 palabras clave y generar prompt visual
-def construir_prompt_visual(palabras: list[str]) -> str:
-    persona = ""
-    marca = ""
-    palabras_clave = []
-
-    for palabra in palabras:
-        if palabra.startswith("PERSONA::"):
-            persona = palabra.replace("PERSONA::", "").strip()
-        elif palabra.startswith("MARCA::"):
-            marca = palabra.replace("MARCA::", "").strip()
-        else:
-            palabras_clave.append(palabra)
-
-    temas = ", ".join(palabras_clave)
-    partes = [f"A cinematic digital painting featuring themes of {temas}"]
-    if persona:
-        partes.append(f"with {persona}")
-    if marca:
-        partes.append(f"and branding of {marca}")
-    partes.append("stylized, highly detailed, concept art, without text.")
-    return ", ".join(partes)
-
-
-# 🔑 Extraer 5 palabras clave importantes del resumen
-def extraer_keywords_llm(texto: str) -> list[str]:
-    # Listas ampliadas de personas y marcas relevantes en IA
-    personas_ia = [
-        "Sam Altman", "Elon Musk", "Sundar Pichai", "Demis Hassabis", "Mark Zuckerberg",
-        "Yann LeCun", "Geoffrey Hinton", "Emad Mostaque", "Ilya Sutskever", "Andrew Ng",
-        "Fei-Fei Li", "Dario Amodei", "Richard Socher", "Jim Fan", "Jensen Huang"
-    ]
-
-    marcas_ia = [
-        "OpenAI", "Google", "DeepMind", "Anthropic", "Meta", "xAI", "Stability AI", "Runway",
-        "Mistral", "Cohere", "Hugging Face", "Midjourney", "Inflection AI", "Apple", "Amazon",
-        "NVIDIA", "Microsoft", "Gemini", "Claude", "LLaMA", "GPT", "ChatGPT", "Bard", "Copilot"
-    ]
-
-    # Consulta al modelo local
-    prompt = (
-        "A partir del siguiente texto, extrae exactamente 5 palabras clave separadas por comas, "
-        "sin explicaciones ni frases adicionales.\n\n"
-        f"{texto}"
+# 🔎 Generar los conceptos clave para el prompt visual con el LLM
+def generar_conceptos_visual_llm(texto_noticia: str) -> List[str]:
+    """
+    Pide al LLM que extraiga de 2 a 3 conceptos clave y los devuelva en inglés.
+    """
+    # Nueva lógica para mejorar la extracción de conceptos
+    prompt_base = (
+        "Based on the following news text, extract 3 key concepts for an image. "
+        "Return them in a simple comma-separated list, in English, without explanations or extra phrases. "
+        "Example format: 'human and AI collaboration, futuristic workspace, digital assistant'.\n\n"
+        "News text:\n\"\"\"\n{texto_noticia}\n\"\"\""
     )
-    respuesta = modelo_llm(prompt)
-    print(f"\n🧪 LLM crudo:\n{respuesta!r}")
 
-    # Limpieza robusta del texto antes del split
-    respuesta_limpia = respuesta.strip()
+    respuesta = modelo_llm(prompt_base)
+    
+    if not respuesta:
+        print("❌ The LLM did not return any concepts. Using default concepts.")
+        return ["technology", "artificial intelligence", "innovation"]
 
-    # Eliminar saltos de línea, encabezados, emojis o adornos
-    respuesta_limpia = re.sub(r"(?i)(palabras clave|🔑|✏️|[*:_-])+[:]*", "", respuesta_limpia)
-    respuesta_limpia = re.sub(r"\s+", " ", respuesta_limpia)  # quita saltos y tabuladores
+    conceptos_limpios = [c.strip() for c in respuesta.split(',') if c.strip()]
+    return conceptos_limpios[:3]
 
-    print(f"\n🧹 LLM limpio:\n{respuesta_limpia!r}")
+# 🖼️ Construir el prompt visual final
+def construir_prompt_final(conceptos: List[str], texto_original: str) -> str:
+    """
+    Combina los conceptos clave, el estilo y las entidades para un prompt final conciso.
+    """
+    prompt_base = f"A cinematic digital painting of {', '.join(conceptos)}"
 
-    # Separar por comas y limpiar espacios
-    palabras = []
-    for palabra in respuesta_limpia.split(","):
-        palabra_limpia = palabra.strip()
-        # Elimina si empieza con solo un número aislado
-        palabra_limpia = re.sub(r"^\d+\s*", "", palabra_limpia)
-        if palabra_limpia:
-            palabras.append(palabra_limpia)
+    personas_ia = {
+        "Sam Altman": "a visionary leader on a stage",
+        "Elon Musk": "a tech mogul in a futuristic setting",
+        "Sundar Pichai": "a CEO in a corporate environment",
+        "Jensen Huang": "a leader with a leather jacket, surrounded by AI hardware",
+        "Mark Zuckerberg": "a tech CEO discussing major deals"
+    }
+    marcas_ia = {
+        "OpenAI": "the OpenAI logo and branding",
+        "Google": "the Google logo and branding",
+        "NVIDIA": "NVIDIA branding and graphics",
+        "Cohere": "the Cohere logo and branding",
+        "Microsoft": "the Microsoft logo and branding"
+    }
 
-    print(f"\n🔍 Palabras clave extraídas (post-split):\n{palabras}")
+    texto_lower = texto_original.lower()
+    
+    for nombre, descripcion in personas_ia.items():
+        if nombre.lower() in texto_lower:
+            prompt_base = f"{prompt_base}, with a portrait of {descripcion}"
+            break
+    
+    for nombre, descripcion in marcas_ia.items():
+        if nombre.lower() in texto_lower:
+            prompt_base = f"{prompt_base}, featuring {nombre} branding"
+            break
 
-    # Extraer nombres conocidos del texto original (por si el modelo los omite)
-    texto_lower = texto.lower()
-    entidades_extra = []
-
-    for nombre in personas_ia + marcas_ia:
-        if nombre.lower() in texto_lower and nombre not in palabras:
-            entidades_extra.append(nombre)
-
-    palabras.extend(entidades_extra)
-
-    # Eliminar duplicados manteniendo el orden
-    palabras_finales = []
-    for p in palabras:
-        if p not in palabras_finales:
-            palabras_finales.append(p)
-
-    # Completar si hay menos de 5
-    while len(palabras_finales) < 5:
-        palabras_finales.append("IA")
-
-    return palabras_finales[:5]
+    prompt_final = f"{prompt_base}, highly detailed, concept art, without text, beautiful lighting."
+    return prompt_base
 
 
 # 🎨 Generar imagen con modelo local (Stable Diffusion)
 def generar_imagen_local(prompt: str) -> BytesIO:
-    print(f"🎨 Prompt visual final: \"{prompt}\"")
+    """
+    Genera una imagen usando el modelo Stable Diffusion XL en local.
+    """
+    print(f"\n🎨 Prompt visual final: \n\n{prompt}\n")
     start = time.time()
-    modelo_id = "sd-legacy/stable-diffusion-v1-5"
-    pipe = StableDiffusionPipeline.from_pretrained(modelo_id, torch_dtype=torch.float16)
-    pipe = pipe.to("cuda" if torch.cuda.is_available() else "cpu")
+    try:
+        modelo_id = "stabilityai/stable-diffusion-xl-base-1.0"
+        pipe = StableDiffusionXLPipeline.from_pretrained(
+            modelo_id, 
+            torch_dtype=torch.float16,
+        )
+        pipe.to("cuda" if torch.cuda.is_available() else "cpu")
 
-    image = pipe(
-        prompt=prompt,
-        num_inference_steps=25,
-        guidance_scale=10.0,
-        height=512,
-        width=896,
-        negative_prompt="text, letters, watermark, signature, subtitles, captions, blurry, distorted, extra limbs, low quality, multiple heads, duplicate faces"
-    ).images[0]
+        print(f"✅ Se ha cargado el modelo: {modelo_id}")
+        print("💡 Empezando la generación de la imagen...")
 
-    print(f"🕒 Generada en {time.time() - start:.2f} segundos")
-    img_byte_arr = BytesIO()
-    image.save(img_byte_arr, format='PNG')
-    img_byte_arr.seek(0)
-    return img_byte_arr
+        image = pipe(
+            prompt=prompt,
+            num_inference_steps=25,
+            guidance_scale=7.5,
+            height=512,
+            width=896,
+            negative_prompt="text, letters, watermark, signature, subtitles, captions, blurry, distorted, extra limbs, bad hands, deformed faces, low quality, multiple heads, duplicate faces, poorly drawn, poorly rendered, ugly, anatomical malformation, person"
+        ).images[0]
+        
+        print(f"🕒 Generada en {time.time() - start:.2f} segundos")
+        img_byte_arr = BytesIO()
+        image.save(img_byte_arr, format='PNG')
+        img_byte_arr.seek(0)
+        return img_byte_arr
 
+    except Exception as e:
+        print(f"Error al generar la imagen con Stable Diffusion: {e}")
+        img = Image.new('RGB', (896, 512), color='gray')
+        d = ImageDraw.Draw(img)
+        d.text((10, 10), "Error al generar la imagen", fill=(255, 255, 255))
+        img_byte_arr = BytesIO()
+        img.save(img_byte_arr, format='PNG')
+        img_byte_arr.seek(0)
+        return img_byte_arr
+
+# 🔎 Obtener noticias desde una búsqueda de Google (implementación real)
+def obtener_noticias_reales_google(query="latest AI agent news") -> List[Tuple[str, str, datetime, str]]:
+    """
+    Realiza una búsqueda de Google para obtener noticias relevantes sobre IA y extrae la información.
+    """
+    if not GOOGLE_API_KEY or not GOOGLE_CX_ID:
+        print("❌ No se encontraron GOOGLE_API_KEY o GOOGLE_CX_ID en el archivo .env.")
+        print("Usando resultados simulados para la demostración.")
+        simulated_results = [
+            {"title": "AI in the workplace: what employees need to excel with intelligent agents", "snippet": "A new report from Microsoft details the future of AI in business, emphasizing the need for skilled employees to work alongside intelligent agents and Copilot...", "link": "https://www.example-news.com/microsoft-ai-agent", "date": "2025-08-02"},
+            {"title": "OpenAI's latest breakthrough: a reasoning agent that learns from its mistakes", "snippet": "OpenAI's new agent can now self-correct its actions, a significant step forward in autonomous AI and self-improving systems...", "link": "https://www.another-news-site.com/openai-web-agent", "date": "2025-08-01"},
+            {"title": "DeepMind researcher on the future of multi-modal AI", "snippet": "A key researcher from DeepMind shares insights into the development of multi-modal AI and its potential impact on various industries...", "link": "https://www.ai-finance-news.com/deep-mind-research", "date": "2025-07-31"},
+            {"title": "Google's new agent-based model for climate science", "snippet": "Google Research introduces a novel AI agent that simulates climate change scenarios to predict future ecological trends...", "link": "https://www.google-research.com/ai-agents-paper", "date": "2025-07-30"},
+            {"title": "The new AI arms race: tech giants compete for top talent with massive salaries", "snippet": "Tech companies like Meta and Google are offering unprecedented salaries and benefits to attract the best AI talent, with offers reaching into the millions...", "link": "https://www.infobae.com/america/the-new-york-times/2025/08/01/los-investigadores-en-ia-estan-negociando-paquetes-salariales-de-250-millones-de-dolares-justo-como-las-estrellas-de-la-nba/", "date": "2025-07-29"}
+        ]
+        
+        noticias_simuladas = []
+        for resultado in simulated_results:
+            titulo = resultado['title']
+            contenido = resultado['snippet']
+            publicado = datetime.strptime(resultado['date'], "%Y-%m-%d")
+            enlace = resultado['link']
+            noticias_simuladas.append((titulo, contenido, publicado, enlace))
+        return noticias_simuladas
+
+    print(f"Buscando noticias reales en Google con el término: '{query}'")
+    url = f"https://www.googleapis.com/customsearch/v1?key={GOOGLE_API_KEY}&cx={GOOGLE_CX_ID}&q={query}&num=5&dateRestrict=d1&lr=lang_en"
+    
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        search_results = response.json()
+        
+        noticias = []
+        for item in search_results.get('items', []):
+            titulo = item.get('title', '')
+            contenido = item.get('snippet', '')
+            enlace = item.get('link', '')
+            publicado = datetime.now()
+            noticias.append((titulo, contenido, publicado, enlace))
+        
+        return noticias
+    except requests.exceptions.RequestException as e:
+        print(f"Error al conectar con la API de Google: {e}")
+        return []
+
+# 💾 Persistencia de noticias publicadas
+def cargar_noticias_publicadas() -> List[dict]:
+    """
+    Carga las noticias publicadas del archivo JSON. Si no existe, devuelve una lista vacía.
+    También limpia las noticias de más de 7 días.
+    """
+    archivo = Path("publicadas.json")
+    if not archivo.exists():
+        return []
+
+    try:
+        with open(archivo, 'r') as f:
+            noticias = json.load(f)
+        
+        hace_7_dias = datetime.now() - timedelta(days=7)
+        noticias_filtradas = [
+            n for n in noticias 
+            if datetime.fromisoformat(n['fecha']) > hace_7_dias
+        ]
+        
+        return noticias_filtradas
+    except (IOError, json.JSONDecodeError) as e:
+        print(f"Error al cargar el archivo de noticias publicadas: {e}")
+        return []
+
+def guardar_noticia_publicada(noticia: dict):
+    """
+    Guarda una noticia en el archivo JSON.
+    """
+    archivo = Path("publicadas.json")
+    noticias = cargar_noticias_publicadas()
+    noticias.append(noticia)
+    
+    try:
+        with open(archivo, 'w') as f:
+            json.dump(noticias, f, indent=4)
+    except IOError as e:
+        print(f"Error al guardar el archivo de noticias publicadas: {e}")
+        
 # 📰 Formatear resumen de la noticia
-def formatear_noticia(texto: str, fecha_publicacion: datetime) -> str:
+def formatear_noticia(titulo_en: str, contenido_en: str, fecha_publicacion: datetime) -> str:
+    """
+    Usa el LLM local para resumir, comentar y traducir una noticia en un formato específico.
+    """
     prompt = (
-        "Analiza la siguiente noticia y responde separando claramente tres secciones:\n"
-        "1. TÍTULO: Un titular corto (máx 15 palabras).\n"
+        "Analiza el siguiente texto en inglés y responde separando claramente tres secciones, en español:\n"
+        "1. TÍTULO: Un titular corto y llamativo (máx 15 palabras).\n"
         "2. RESUMEN: Qué ha pasado (máx 5 líneas).\n"
         "3. COMENTARIO: Análisis del impacto o contexto (máx 8 líneas).\n\n"
-        f"Noticia original:\n\"\"\"\n{texto}\n\"\"\""
+        f"Texto original:\n\"\"\"\n{titulo_en}\n{contenido_en}\n\"\"\""
     )
-    resultado = modelo_llm(prompt)
+    resultado = modelo_llm(prompt, model_name="mistral-small-3.2-24b-instruct-256k")
+    if not resultado:
+        return "❌ No se pudo generar el resumen de la noticia."
+    
     fecha_str = fecha_publicacion.strftime("%d/%m/%Y %H:%M")
     return f"{resultado}\n\n🗓 *Publicado:* {fecha_str}"
 
 
-# 🔎 Obtener noticias desde RSS
-def obtener_noticias_rss(feed_url="https://venturebeat.com/feed/"):
-    feed = feedparser.parse(feed_url)
-    noticias = []
-    for entrada in feed.entries[:5]:
-        titulo = entrada.title
-        enlace = entrada.link
-        publicado = datetime(*entrada.published_parsed[:6])
-        contenido = entrada.summary
-        noticias.append((titulo, contenido, publicado, enlace))
-    return noticias
-
-
 # ▶️ Flujo completo
 async def enviar():
-    noticias = obtener_noticias_rss()
-    print("🧠 Noticias IA destacadas:\n")
-    for i, (titulo, _, fecha, _) in enumerate(noticias, 1):
-        print(f"{i}. {titulo} ({fecha.strftime('%d/%m/%Y')})")
+    """
+    Función principal que ejecuta todo el flujo: obtiene noticias,
+    procesa la primera no publicada, genera resumen e imagen y publica en Telegram.
+    """
+    noticias_publicadas = cargar_noticias_publicadas()
+    enlaces_publicados = {n['enlace'] for n in noticias_publicadas}
 
-    seleccion = int(input("\nElige una noticia (1-5): "))
-    _, contenido, fecha, enlace = noticias[seleccion - 1]
+    noticias = obtener_noticias_reales_google()
+    if not noticias:
+        print("No se encontraron noticias. El script finalizará.")
+        return
 
-    resumen = formatear_noticia(contenido, fecha)
+    noticia_para_publicar = None
+    for titulo, contenido, fecha, enlace in noticias:
+        if enlace not in enlaces_publicados:
+            noticia_para_publicar = {
+                "titulo": titulo,
+                "contenido": contenido,
+                "fecha": fecha,
+                "enlace": enlace
+            }
+            print(f"\n✅ Se ha encontrado una noticia nueva para publicar: '{titulo}'")
+            break
+    
+    if not noticia_para_publicar:
+        print("\nℹ️ No se encontraron noticias nuevas en la búsqueda. El script finalizará.")
+        return
+
+    titulo_en = noticia_para_publicar['titulo']
+    contenido_en = noticia_para_publicar['contenido']
+    fecha = noticia_para_publicar['fecha']
+    enlace = noticia_para_publicar['enlace']
+
+    print("\n⏳ Generando resumen...")
+    resumen = formatear_noticia(titulo_en, contenido_en, fecha)
     print("\n🧠 Resumen generado:\n", resumen)
+    
+    print("\n⏳ Creando prompt visual a partir de la noticia completa...")
+    conceptos = generar_conceptos_visual_llm(contenido_en)
+    print(f"\n🔑 Conceptos clave extraídos: {', '.join(conceptos)}\n")
 
-    palabras = extraer_keywords_llm(resumen)
-    print(f"\n🔑 Palabras clave extraídas: {palabras}")
+    print("\n⏳ Construyendo prompt final para Stable Diffusion...")
+    prompt_final = construir_prompt_final(conceptos, contenido_en)
 
-    prompt = construir_prompt_visual(palabras)
-    imagen = generar_imagen_local(prompt)
+    imagen = generar_imagen_local(prompt_final)
 
-    await bot.send_photo(
-        chat_id=TELEGRAM_CHAT_ID,
-        photo=imagen,
-        caption=resumen,
-        parse_mode=ParseMode.MARKDOWN
-    )
+    try:
+        print("\n🚀 Enviando mensaje a Telegram...")
+        caption = f"{resumen}\n\nFuente: {enlace}"
+        await bot.send_photo(
+            chat_id=TELEGRAM_CHAT_ID,
+            photo=imagen,
+            caption=caption,
+            parse_mode='Markdown'
+        )
+        print("✅ Mensaje enviado con éxito.")
+        
+        noticia_guardar = {
+            'titulo': noticia_para_publicar['titulo'],
+            'enlace': enlace,
+            'fecha': datetime.now().isoformat()
+        }
+        guardar_noticia_publicada(noticia_guardar)
+        
+    except Exception as e:
+        print(f"❌ Error al enviar el mensaje a Telegram: {e}")
 
-
-import asyncio
-import sys
 
 if __name__ == "__main__":
     import warnings
     warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*NoneType.*")
 
     try:
+        if sys.platform == "win32":
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        
         asyncio.run(enviar())
     except KeyboardInterrupt:
         print("⛔ Cancelado por el usuario")
-
-
