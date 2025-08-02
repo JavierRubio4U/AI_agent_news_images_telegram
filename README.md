@@ -1,40 +1,5 @@
-# 🤖 Agente de Noticias IA para Telegram
+🤖 Agente de Noticias IA para TelegramEste proyecto automatiza el proceso de selección, análisis y publicación de noticias de última hora sobre agentes de inteligencia artificial en un canal de Telegram. Combina un resumen generado por un modelo de lenguaje local (LLM) con una imagen conceptual creada por Stable Diffusion XL.🔧 ¿Qué hace este proyecto?Busca noticias relevantes: Utiliza la API de Búsqueda Personalizada de Google para encontrar las 5 noticias más importantes sobre "agentes de IA" de las últimas 24 horas.Evita duplicados: El script comprueba si la noticia ya ha sido publicada en los últimos 7 días. Si es así, busca la siguiente noticia no publicada en la lista.Procesa la noticia: Envía el titular y el contenido de la noticia a un LLM local (como el modelo mistral-small) para:Traducir el texto al español.Generar un resumen breve, un comentario y el título en español.Genera una imagen conceptual: Extrae conceptos clave de la noticia y los utiliza para crear un prompt visual detallado para el modelo Stable Diffusion XL. Esto genera una imagen artística y de alta calidad.Publica de forma autónoma: Una vez que la imagen y el resumen están listos, el script publica automáticamente el resultado completo en un canal de Telegram, incluyendo la fuente de la noticia.📁 Estructura de archivosArchivoDescripcióncrear_noticia.pyEl script principal que realiza todo el flujo de trabajo de forma automática.publicadas.jsonUn archivo JSON que el script utiliza para guardar un registro de las noticias ya publicadas en los últimos 7 días..gitignoreConfiguración para que Git ignore archivos como .env y el cache de diffusers.credenciales_telegram.envArchivo donde se guardan las credenciales para las APIs y el bot de Telegram.📦 RequisitosPython 3.10+ y las bibliotecas necesarias (requests, python-dotenv, diffusers, torch, Pillow, python-telegram-bot).Un LLM corriendo localmente (se recomienda mistral-small-3.2-24b-instruct-256k o similar) con LM Studio o Ollama en http://localhost:11434.Modelo Stable Diffusion XL Base 1.0 descargado en tu sistema. La biblioteca diffusers lo descargará la primera vez que se ejecute el script.API Key y CX ID de Google Custom Search.Un bot de Telegram con su token y un canal configurado.⚙️ ConfiguraciónCrea un archivo llamado credenciales_telegram.env en la misma carpeta que el script.Añade tus credenciales en el archivo:TELEGRAM_TOKEN=tu_token_de_telegram
 
-Este proyecto automatiza el proceso de selección, análisis y publicación de noticias tecnológicas (especialmente sobre inteligencia artificial) en un canal de Telegram, combinando un resumen generado por un LLM local y una imagen estilo GTA V.
-
----
-
-## 🔧 ¿Qué hace este proyecto?
-
-1. **Lee el feed RSS de VentureBeat**.
-2. **Selecciona una de las 3 primeras noticias** (puede ser al azar o con selección manual).
-3. **Envía la noticia a un modelo LLM local** (por ejemplo, Mistral vía Ollama) para generar:
-   - Un título.
-   - Un resumen breve.
-   - Un comentario de impacto o contexto.
-4. **Genera una imagen tipo póster estilo GTA V** con un prompt fijo.
-5. **Publica todo en un canal de Telegram** automáticamente.
-
----
-
-## 📁 Estructura de archivos
-
-| Archivo                    | Descripción                                                                 |
-|---------------------------|-----------------------------------------------------------------------------|
-| `agente_local.py`         | Script manual. Permite elegir la noticia y ver el resultado antes de enviar.|
-| `agente_local_automatico.py` | Script automático. Se ejecuta sin intervención, elige una noticia aleatoria y la publica. Ideal para uso diario con cron. |
-| `publicar_telegram.py`    | Versión experimental o de pruebas para publicación en Telegram.            |
-| `.gitignore`              | Evita subir archivos sensibles como `.env` con tus credenciales.           |
-
----
-
-## 📦 Requisitos
-
-- Python 3.10+
-- Tener un modelo LLM corriendo localmente (como Ollama con Mistral).
-- Cuenta de Telegram + un canal + un bot configurado con token.
-- Archivo `.env` en la misma carpeta con este contenido:
-
-```env
-TELEGRAM_TOKEN=TuTokenTelegram
-TELEGRAM_CHAT_ID=@TuCanalPublico
+TELEGRAM_CHAT_ID=tu_chat_id_o_nombre_de_canal
+GOOGLE_API_KEY=tu_api_key_de_google
+GOOGLE_CX_ID=tu_cx_id_de_google
