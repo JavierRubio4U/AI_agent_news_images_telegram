@@ -13,6 +13,8 @@ from typing import List, Tuple
 from io import BytesIO
 from contextlib import contextmanager
 from diffusers import StableDiffusionXLPipeline
+from fastapi import FastAPI
+import asyncio
 
 # Variables desde entorno (ya vienen desde Secret Manager)
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -49,6 +51,14 @@ MARCAS_PRIORITARIAS = {
     "Mistral": "an open-source AI research space inspired by Mistral",
     "LLaMA": "a Meta AI research interface inspired by LLaMA"
 }
+
+app = FastAPI()
+
+@app.get("/")
+async def run_news_bot():
+    from crear_noticia_core import enviar_noticia  # o directamente importar tu función actual
+    await enviar_noticia()
+    return {"status": "OK"}
 
 @contextmanager
 def medir_duracion(etiqueta):
@@ -209,7 +219,10 @@ async def enviar_noticia():
 
     guardar_url_publicada(url_noticia)
 
+import uvicorn
+
 if __name__ == "__main__":
-    if os.name == "nt":
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    asyncio.run(enviar_noticia())
+    port = int(os.environ.get("PORT", 8080))
+    uvicorn.run("crear_noticia_gcp:app", host="0.0.0.0", port=port)
+
+

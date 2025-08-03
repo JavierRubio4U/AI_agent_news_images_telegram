@@ -1,7 +1,9 @@
+fastapi
+uvicorn[standard]
 requests
-python-dotenv
-python-telegram-bot
+python-telegram-bot==20.7
 Pillow
-torch
-diffusers
-accelerate
+diffusers==0.27.2
+accelerate==0.30.0
+transformers
+safetensors
