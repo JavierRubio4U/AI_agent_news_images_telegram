@@ -7,7 +7,7 @@ Este proyecto genera y publica automáticamente noticias sobre IA con una imagen
 
 Puedes ver las publicaciones generadas por este bot en tiempo real en el canal de Telegram:
 
-👉 [t.me/agente_libre](https://t.me/agente_libre) *(reemplaza con el canal real si es otro)*
+👉 [t.me/agente_libre](https://t.me/agente_libre)
 
 
 ## 🚀 Cómo probarlo rápidamente
