@@ -56,7 +56,6 @@ app = FastAPI()
 
 @app.get("/")
 async def run_news_bot():
-    from crear_noticia_core import enviar_noticia  # o directamente importar tu función actual
     await enviar_noticia()
     return {"status": "OK"}
 

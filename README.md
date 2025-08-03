@@ -3,6 +3,12 @@
 Este proyecto genera y publica automáticamente noticias sobre IA con una imagen ilustrativa generada por modelos open source. Puede ejecutarse en local con Ollama o desplegarse en una VM con GPU en Google Cloud Platform (GCP).
 
 ---
+## 📲 Canal de Telegram (usuario)
+
+Puedes ver las publicaciones generadas por este bot en tiempo real en el canal de Telegram:
+
+👉 [t.me/agente_libre](https://t.me/agente_libre) *(reemplaza con el canal real si es otro)*
+
 
 ## 🚀 Cómo probarlo rápidamente
 
