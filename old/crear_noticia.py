@@ -17,8 +17,7 @@ from diffusers import StableDiffusionXLPipeline
 from typing import List, Tuple
 from io import BytesIO
 
-# 📁 Cargar credenciales
-# Nota: La API Key y el CX ID ya han sido añadidos a tu archivo .env
+# 📁 Cargar credenciales desde el archivo .env (para uso local)
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / "credenciales_telegram.env")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -32,12 +31,12 @@ if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
 # Inicialización del bot de Telegram
 bot = Bot(token=TELEGRAM_TOKEN)
 
-# 🧠 Consulta a tu LLM local (Ollama o LM Studio)
-def modelo_llm(prompt: str, model_name: str = "mistralai/mistral-7b-instruct-v0.3") -> str:
+# 🧠 Consulta a tu LLM local (Ollama)
+def modelo_llm(prompt: str, model_name: str = "mistral") -> str:
     """
-    Consulta a un modelo de lenguaje local a través de la API de Ollama/LM Studio.
+    Consulta a un modelo de lenguaje local a través de la API de Ollama.
     """
-    url = "http://localhost:11434/v1/chat/completions"
+    url = "http://localhost:11434/api/chat"
     
     payload = {
         "model": model_name,
@@ -47,15 +46,16 @@ def modelo_llm(prompt: str, model_name: str = "mistralai/mistral-7b-instruct-v0.
                 "content": prompt
             }
         ],
-        "max_tokens": 500,
-        "temperature": 0.7,
         "stream": False
     }
     
+    start_time = time.time()
     try:
         response = requests.post(url, json=payload)
         response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"].strip()
+        end_time = time.time()
+        print(f"🕒 LLM (modelo_llm) tardó {end_time - start_time:.2f} segundos.")
+        return response.json()["message"]["content"].strip()
     except requests.exceptions.RequestException as e:
         print(f"Error al conectar con el LLM local: {e}")
         return ""
@@ -65,11 +65,11 @@ def generar_conceptos_visual_llm(texto_noticia: str) -> List[str]:
     """
     Pide al LLM que extraiga de 2 a 3 conceptos clave y los devuelva en inglés.
     """
-    # Nueva lógica para mejorar la extracción de conceptos
+    start_time = time.time()
     prompt_base = (
         "Based on the following news text, extract 3 key concepts for an image. "
         "Return them in a simple comma-separated list, in English, without explanations or extra phrases. "
-        "Example format: 'human and AI collaboration, futuristic workspace, digital assistant'.\n\n"
+        "Example format: 'futuristic office, data visualization, AI branding'.\n\n"
         "News text:\n\"\"\"\n{texto_noticia}\n\"\"\""
     )
 
@@ -80,6 +80,8 @@ def generar_conceptos_visual_llm(texto_noticia: str) -> List[str]:
         return ["technology", "artificial intelligence", "innovation"]
 
     conceptos_limpios = [c.strip() for c in respuesta.split(',') if c.strip()]
+    end_time = time.time()
+    print(f"🕒 Extracción de conceptos tardó {end_time - start_time:.2f} segundos.")
     return conceptos_limpios[:3]
 
 # 🖼️ Construir el prompt visual final
@@ -106,18 +108,20 @@ def construir_prompt_final(conceptos: List[str], texto_original: str) -> str:
 
     texto_lower = texto_original.lower()
     
+    # Añadir persona
     for nombre, descripcion in personas_ia.items():
         if nombre.lower() in texto_lower:
             prompt_base = f"{prompt_base}, with a portrait of {descripcion}"
             break
     
+    # Añadir marca
     for nombre, descripcion in marcas_ia.items():
         if nombre.lower() in texto_lower:
             prompt_base = f"{prompt_base}, featuring {nombre} branding"
             break
 
-    prompt_final = f"{prompt_base}, highly detailed, concept art, without text, beautiful lighting."
-    return prompt_base
+    # Añadir el estilo final
+    return f"{prompt_base}, highly detailed, cinematic digital painting, without text, beautiful lighting."
 
 
 # 🎨 Generar imagen con modelo local (Stable Diffusion)
@@ -126,7 +130,7 @@ def generar_imagen_local(prompt: str) -> BytesIO:
     Genera una imagen usando el modelo Stable Diffusion XL en local.
     """
     print(f"\n🎨 Prompt visual final: \n\n{prompt}\n")
-    start = time.time()
+    start_time = time.time()
     try:
         modelo_id = "stabilityai/stable-diffusion-xl-base-1.0"
         pipe = StableDiffusionXLPipeline.from_pretrained(
@@ -147,7 +151,8 @@ def generar_imagen_local(prompt: str) -> BytesIO:
             negative_prompt="text, letters, watermark, signature, subtitles, captions, blurry, distorted, extra limbs, bad hands, deformed faces, low quality, multiple heads, duplicate faces, poorly drawn, poorly rendered, ugly, anatomical malformation, person"
         ).images[0]
         
-        print(f"🕒 Generada en {time.time() - start:.2f} segundos")
+        end_time = time.time()
+        print(f"🕒 Generada en {end_time - start_time:.2f} segundos")
         img_byte_arr = BytesIO()
         image.save(img_byte_arr, format='PNG')
         img_byte_arr.seek(0)
@@ -175,7 +180,6 @@ def obtener_noticias_reales_google(query="latest AI agent news") -> List[Tuple[s
             {"title": "AI in the workplace: what employees need to excel with intelligent agents", "snippet": "A new report from Microsoft details the future of AI in business, emphasizing the need for skilled employees to work alongside intelligent agents and Copilot...", "link": "https://www.example-news.com/microsoft-ai-agent", "date": "2025-08-02"},
             {"title": "OpenAI's latest breakthrough: a reasoning agent that learns from its mistakes", "snippet": "OpenAI's new agent can now self-correct its actions, a significant step forward in autonomous AI and self-improving systems...", "link": "https://www.another-news-site.com/openai-web-agent", "date": "2025-08-01"},
             {"title": "DeepMind researcher on the future of multi-modal AI", "snippet": "A key researcher from DeepMind shares insights into the development of multi-modal AI and its potential impact on various industries...", "link": "https://www.ai-finance-news.com/deep-mind-research", "date": "2025-07-31"},
-            {"title": "Google's new agent-based model for climate science", "snippet": "Google Research introduces a novel AI agent that simulates climate change scenarios to predict future ecological trends...", "link": "https://www.google-research.com/ai-agents-paper", "date": "2025-07-30"},
             {"title": "The new AI arms race: tech giants compete for top talent with massive salaries", "snippet": "Tech companies like Meta and Google are offering unprecedented salaries and benefits to attract the best AI talent, with offers reaching into the millions...", "link": "https://www.infobae.com/america/the-new-york-times/2025/08/01/los-investigadores-en-ia-estan-negociando-paquetes-salariales-de-250-millones-de-dolares-justo-como-las-estrellas-de-la-nba/", "date": "2025-07-29"}
         ]
         
@@ -253,6 +257,7 @@ def formatear_noticia(titulo_en: str, contenido_en: str, fecha_publicacion: date
     """
     Usa el LLM local para resumir, comentar y traducir una noticia en un formato específico.
     """
+    start_time = time.time()
     prompt = (
         "Analiza el siguiente texto en inglés y responde separando claramente tres secciones, en español:\n"
         "1. TÍTULO: Un titular corto y llamativo (máx 15 palabras).\n"
@@ -260,16 +265,18 @@ def formatear_noticia(titulo_en: str, contenido_en: str, fecha_publicacion: date
         "3. COMENTARIO: Análisis del impacto o contexto (máx 8 líneas).\n\n"
         f"Texto original:\n\"\"\"\n{titulo_en}\n{contenido_en}\n\"\"\""
     )
-    resultado = modelo_llm(prompt, model_name="mistral-small-3.2-24b-instruct-256k")
+    resultado = modelo_llm(prompt)
     if not resultado:
         return "❌ No se pudo generar el resumen de la noticia."
     
     fecha_str = fecha_publicacion.strftime("%d/%m/%Y %H:%M")
+    end_time = time.time()
+    print(f"🕒 Formateo de noticia tardó {end_time - start_time:.2f} segundos.")
     return f"{resultado}\n\n🗓 *Publicado:* {fecha_str}"
 
 
-# ▶️ Flujo completo
-async def enviar():
+# ▶️ Flujo completo del bot de noticias
+async def enviar_noticia():
     """
     Función principal que ejecuta todo el flujo: obtiene noticias,
     procesa la primera no publicada, genera resumen e imagen y publica en Telegram.
@@ -310,7 +317,7 @@ async def enviar():
     print("\n⏳ Creando prompt visual a partir de la noticia completa...")
     conceptos = generar_conceptos_visual_llm(contenido_en)
     print(f"\n🔑 Conceptos clave extraídos: {', '.join(conceptos)}\n")
-
+    
     print("\n⏳ Construyendo prompt final para Stable Diffusion...")
     prompt_final = construir_prompt_final(conceptos, contenido_en)
 
@@ -346,6 +353,6 @@ if __name__ == "__main__":
         if sys.platform == "win32":
             asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
         
-        asyncio.run(enviar())
+        asyncio.run(enviar_noticia())
     except KeyboardInterrupt:
         print("⛔ Cancelado por el usuario")

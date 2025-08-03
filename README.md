@@ -1,45 +1,56 @@
-# 🤖 Agente de Noticias IA para Telegram
+# 🤖 Proyecto de Agentes de IA para Telegram
 
-Este proyecto automatiza el proceso de selección, análisis y publicación de noticias de última hora sobre agentes de inteligencia artificial en un canal de Telegram. Combina un resumen generado por un modelo de lenguaje local (LLM) con una imagen conceptual creada por Stable Diffusion XL.
+Este proyecto unificado consta de dos bots de Telegram que interactúan con modelos de lenguaje y generación de imágenes locales para automatizar y facilitar tareas relacionadas con la inteligencia artificial.
 
 ## 🔧 ¿Qué hace este proyecto?
 
-1.  **Busca noticias relevantes:** Utiliza la API de Búsqueda Personalizada de Google para encontrar las 5 noticias más importantes sobre "agentes de IA" de las últimas 24 horas.
+El proyecto tiene dos componentes principales:
 
-2.  **Evita duplicados:** El script comprueba si la noticia ya ha sido publicada en los últimos 7 días. Si es así, busca la siguiente noticia no publicada en la lista.
+### 1. Bot de Noticias (Automatizado)
 
-3.  **Procesa la noticia:** Envía el titular y el contenido de la noticia a un LLM local (como el modelo `mistral-small`) para:
-    * Traducir el texto al español.
-    * Generar un resumen breve, un comentario y el título en español.
+* **Busca noticias relevantes:** Utiliza la API de Búsqueda Personalizada de Google para encontrar las 5 noticias más importantes sobre "agentes de IA" de las últimas 24 horas.
 
-4.  **Genera una imagen conceptual:** Extrae conceptos clave de la noticia y los utiliza para crear un *prompt* visual detallado para el modelo Stable Diffusion XL. Esto genera una imagen artística y de alta calidad.
+* **Evita duplicados:** El script comprueba si la noticia ya ha sido publicada en los últimos 7 días.
 
-5.  **Publica de forma autónoma:** Una vez que la imagen y el resumen están listos, el script publica automáticamente el resultado completo en un canal de Telegram, incluyendo la fuente de la noticia.
+* **Procesa la noticia:** Envía el titular y el contenido de la noticia a un LLM local (`mistral-small`) para traducirlo al español, generar un resumen y un comentario.
+
+* **Genera una imagen conceptual:** Crea una imagen artística de alta calidad con Stable Diffusion XL basándose en los conceptos clave de la noticia.
+
+* **Publica de forma autónoma:** Publica el resultado en un canal de Telegram, incluyendo la fuente de la noticia.
+
+### 2. Bot de Chat (Interactivo)
+
+* **Responde en tiempo real:** Un segundo bot te permite interactuar en un chat privado de Telegram con tu LLM local (`mistral-small`).
+
+* **Gestión de peticiones:** Utiliza un semáforo de concurrencia para gestionar las peticiones, asegurando que el modelo no se sature.
+
+* **Herramienta de desarrollo:** Ideal para probar y depurar el LLM, o simplemente para tener un asistente personal de IA en tu chat.
 
 ## 📁 Estructura de archivos
 
-| Archivo | Descripción |
+| **Archivo** | **Descripción** |
 |---|---|
-| `crear_noticia.py` | El script principal que realiza todo el flujo de trabajo de forma automática. |
-| `publicadas.json` | Un archivo JSON que el script utiliza para guardar un registro de las noticias ya publicadas en los últimos 7 días. |
-| `.gitignore` | Configuración para que Git ignore archivos como `.env` y el cache de `diffusers`. |
-| `credenciales_telegram.env` | Archivo donde se guardan las credenciales para las APIs y el bot de Telegram. |
+| `crear_noticia.py` | Script principal para el bot de noticias autónomo. |
+| `telegram_message_bot.py` | Script para el bot de chat interactivo. |
+| `publicadas.json` | Archivo JSON que el bot de noticias usa para evitar duplicados. |
+| `.gitignore` | Configuración para que Git ignore archivos sensibles como `.env` y el cache de `diffusers`. |
+| `credenciales_telegram.env` | Archivo donde se guardan las credenciales para ambas funcionalidades. |
 
 ## 📦 Requisitos
 
 * **Python 3.10+** y las bibliotecas necesarias (`requests`, `python-dotenv`, `diffusers`, `torch`, `Pillow`, `python-telegram-bot`).
 
-* **Un LLM corriendo localmente** (se recomienda `mistral-small-3.2-24b-instruct-256k` o similar) con LM Studio o Ollama en `http://localhost:11434`.
+* **Un LLM corriendo localmente** (se recomienda `mistral-small-3.2-24b-instruct-256k` o similar) con LM Studio u Ollama en `http://localhost:11434`.
 
-* **Modelo Stable Diffusion XL Base 1.0** descargado en tu sistema. La biblioteca `diffusers` lo descargará la primera vez que se ejecute el script.
+* **Modelo Stable Diffusion XL Base 1.0** descargado en tu sistema.
 
 * **API Key y CX ID de Google Custom Search**.
 
-* **Un bot de Telegram** con su token y un canal configurado.
+* **Un bot de Telegram** con su token y un canal para el bot de noticias.
 
 ## ⚙️ Configuración
 
-1.  Crea un archivo llamado `credenciales_telegram.env` en la misma carpeta que el script.
+1.  Crea un archivo llamado `credenciales_telegram.env` en la misma carpeta.
 
 2.  Añade tus credenciales en el archivo:
     ```
@@ -48,3 +59,7 @@ Este proyecto automatiza el proceso de selección, análisis y publicación de n
     GOOGLE_API_KEY=tu_api_key_de_google
     GOOGLE_CX_ID=tu_cx_id_de_google
     ```
+
+## 🚀 Pruébalo
+
+Puedes ver el resultado del bot de noticias en acción en el canal de Telegram: [https://t.me/agente_libre](https://t.me/agente_libre)

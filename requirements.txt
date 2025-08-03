@@ -1,0 +1,7 @@
+requests
+python-dotenv
+python-telegram-bot
+Pillow
+torch
+diffusers
+accelerate
