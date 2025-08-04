@@ -13,7 +13,6 @@ from typing import List, Tuple
 from io import BytesIO
 from contextlib import contextmanager
 from diffusers import StableDiffusionXLPipeline
-from fastapi import FastAPI
 import asyncio
 
 # Variables desde entorno (ya vienen desde Secret Manager)
@@ -52,12 +51,7 @@ MARCAS_PRIORITARIAS = {
     "LLaMA": "a Meta AI research interface inspired by LLaMA"
 }
 
-app = FastAPI()
 
-@app.get("/")
-async def run_news_bot():
-    await enviar_noticia()
-    return {"status": "OK"}
 
 @contextmanager
 def medir_duracion(etiqueta):
@@ -113,23 +107,37 @@ def url_ya_publicada(url: str) -> bool:
         return False
     with open(ARCHIVO_NOTICIAS, "r", encoding="utf-8") as f:
         try:
-            urls = json.load(f)
+            noticias = json.load(f)
         except json.JSONDecodeError:
-            urls = []
-    return url in urls
+            return False
 
-def guardar_url_publicada(url: str):
+    return any(n["url"] == url for n in noticias)
+
+
+def guardar_noticia_publicada(titulo: str, url: str):
+    noticia = {
+        "titulo": titulo,
+        "url": url,
+        "fecha": datetime.now().strftime("%Y-%m-%d")
+    }
+
     if Path(ARCHIVO_NOTICIAS).exists():
         with open(ARCHIVO_NOTICIAS, "r", encoding="utf-8") as f:
             try:
-                urls = json.load(f)
+                noticias = json.load(f)
             except json.JSONDecodeError:
-                urls = []
+                noticias = []
     else:
-        urls = []
-    urls.append(url)
+        noticias = []
+
+    noticias.append(noticia)
+
+    # Limita a los últimos 100 registros por si crece mucho
+    noticias = noticias[-100:]
+
     with open(ARCHIVO_NOTICIAS, "w", encoding="utf-8") as f:
-        json.dump(urls, f, ensure_ascii=False, indent=2)
+        json.dump(noticias, f, ensure_ascii=False, indent=2)
+
 
 def generar_conceptos_visual_llm(texto: str) -> List[str]:
     prompt = (
@@ -184,10 +192,10 @@ async def enviar_noticia():
 
     with medir_duracion("generar resumen"):
         resumen = modelo_llm(
-            "Resume esta noticia en tres partes separadas por nueva línea:\n"
-            "1. TÍTULO: (máximo 15 palabras)\n"
-            "2. RESUMEN: (1–2 frases claras)\n"
-            "3. COMENTARIO: (análisis de impacto o contexto)\n\n"
+            "Resume en español esta noticia en tres partes separadas por nueva línea:\n"
+            "1. TÍTULO: (máximo 15 palabras, en español)\n"
+            "2. RESUMEN: (1–2 frases claras en español)\n"
+            "3. COMENTARIO: (análisis de impacto o contexto tambien en español)\n\n"
             f"{texto}"
         )
     print("🧠 Resumen generado:\n", resumen)
@@ -216,7 +224,8 @@ async def enviar_noticia():
             parse_mode="Markdown"
         )
 
-    guardar_url_publicada(url_noticia)
+    guardar_noticia_publicada(titulo_noticia, url_noticia)
+
 
 import uvicorn
 
